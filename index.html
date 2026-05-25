@@ -29,6 +29,26 @@
       margin-bottom: 18px;
     }
 
+    .status {
+      background: #f1f1f1;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 13px;
+      line-height: 1.7;
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+
+    .ok {
+      color: green;
+      font-weight: bold;
+    }
+
+    .ng {
+      color: red;
+      font-weight: bold;
+    }
+
     label {
       display: block;
       font-weight: bold;
@@ -61,12 +81,29 @@
       background: #999999;
     }
 
-    #completeMessage {
+    .note {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #666666;
+      text-align: center;
+    }
+
+    .complete-box {
       display: none;
       text-align: center;
-      font-size: 22px;
+      padding: 40px 10px;
+    }
+
+    .complete-message {
+      font-size: 24px;
       font-weight: bold;
-      margin-top: 40px;
+      color: #06c755;
+      margin-bottom: 20px;
+    }
+
+    .close-button {
+      background: #06c755;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -75,6 +112,13 @@
   <div class="container" id="formArea">
     <h2>イベント応募フォーム</h2>
 
+    <div class="status">
+      <div>状態：<span id="status">読み込み中</span></div>
+      <div>LINE名：<span id="lineName">未取得</span></div>
+      <div>UID：<span id="uid">未取得</span></div>
+      <div>エラー：<span id="errorText">なし</span></div>
+    </div>
+
     <label>名前</label>
     <input id="name" type="text" placeholder="山田 太郎">
 
@@ -82,28 +126,32 @@
     <input id="age" type="number" placeholder="20">
 
     <label>電話番号</label>
-    <input
-      id="phone"
-      type="tel"
-      placeholder="090-1234-5678"
-      maxlength="13"
-      oninput="formatPhoneNumber(this)"
-    >
+    <input id="phone" type="tel" placeholder="090-1234-5678" inputmode="numeric">
 
     <label>最寄駅</label>
     <input id="station" type="text" placeholder="池袋駅">
 
     <button id="submitBtn" onclick="sendForm()" disabled>
-      読み込み中...
+      LINE情報取得中...
+    </button>
+
+    <div class="note">
+      送信後、応募内容が記録されます。
+    </div>
+  </div>
+
+  <div class="container complete-box" id="completeArea">
+    <div class="complete-message">
+      応募しました
+    </div>
+
+    <button class="close-button" onclick="closeLiffWindow()">
+      閉じる
     </button>
   </div>
 
-  <div id="completeMessage">
-    応募しました
-  </div>
-
   <script>
-    const LIFF_ID = "2010156344-2keIJZ8B";
+　　const LIFF_ID = "2010156344-2keIJZ8B";
 　　const GAS_URL = "https://script.google.com/macros/s/AKfycbzRHKfRsvJRzfp8XzxjtvFskeFjKEueAL6U_4EWI28wUowxpFMoal_NuGDsB_StK1A/exec";
     
     let lineProfile = {
@@ -113,50 +161,94 @@
 
     let isSubmitting = false;
 
+    function setText(id, text) {
+      document.getElementById(id).textContent = text;
+    }
+
+    function setStatus(text, type) {
+      const el = document.getElementById("status");
+      el.textContent = text;
+      el.className = "";
+
+      if (type === "ok") {
+        el.classList.add("ok");
+      }
+
+      if (type === "ng") {
+        el.classList.add("ng");
+      }
+    }
+
     function setButton(text, disabled) {
       const btn = document.getElementById("submitBtn");
       btn.textContent = text;
       btn.disabled = disabled;
     }
 
-    function formatPhoneNumber(input) {
-      let value = input.value.replace(/\D/g, "");
+    function formatPhoneNumber(value) {
+      const numbers = value.replace(/\D/g, "");
 
-      if (value.length > 11) {
-        value = value.slice(0, 11);
+      if (numbers.length <= 3) {
+        return numbers;
       }
 
-      if (value.length <= 3) {
-        input.value = value;
-      } else if (value.length <= 7) {
-        input.value = value.slice(0, 3) + "-" + value.slice(3);
-      } else {
-        input.value =
-          value.slice(0, 3) + "-" +
-          value.slice(3, 7) + "-" +
-          value.slice(7);
+      if (numbers.length <= 7) {
+        return numbers.replace(/(\d{3})(\d+)/, "$1-$2");
       }
+
+      return numbers
+        .slice(0, 11)
+        .replace(/(\d{3})(\d{4})(\d{0,4})/, function(match, p1, p2, p3) {
+          return p3 ? p1 + "-" + p2 + "-" + p3 : p1 + "-" + p2;
+        });
     }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      const phoneInput = document.getElementById("phone");
+
+      phoneInput.addEventListener("input", function() {
+        this.value = formatPhoneNumber(this.value);
+      });
+    });
 
     async function initApp() {
       try {
+        setStatus("LIFF初期化中...");
+
         await liff.init({
           liffId: LIFF_ID
         });
 
+        setStatus("LIFF初期化完了", "ok");
+
         if (!liff.isLoggedIn()) {
+          setStatus("LINEログインへ移動します");
           liff.login();
           return;
         }
+
+        setStatus("プロフィール取得中...");
 
         const profile = await liff.getProfile();
 
         lineProfile.lineName = profile.displayName || "";
         lineProfile.userId = profile.userId || "";
 
+        setText("lineName", lineProfile.lineName);
+        setText("uid", lineProfile.userId);
+
+        if (!lineProfile.userId) {
+          setStatus("UID取得失敗", "ng");
+          setText("errorText", "userIdが取得できませんでした");
+          return;
+        }
+
+        setStatus("LINE情報取得完了", "ok");
         setButton("応募する", false);
 
       } catch (error) {
+        setStatus("LIFFエラー", "ng");
+        setText("errorText", error.message);
         setButton("LINE情報取得エラー", true);
       }
     }
@@ -172,24 +264,28 @@
       const station = document.getElementById("station").value.trim();
 
       if (!name || !age || !phone || !station) {
-        alert("すべての項目を入力してください");
+        setText("errorText", "すべての項目を入力してください");
+        setStatus("入力エラー", "ng");
         return;
       }
 
       if (Number(age) < 15 || Number(age) > 100) {
-        alert("年齢を正しく入力してください");
+        setText("errorText", "年齢を正しく入力してください");
+        setStatus("入力エラー", "ng");
         return;
       }
 
-      const phonePattern = /^0\d{2}-\d{4}-\d{4}$/;
+      const phoneDigits = phone.replace(/\D/g, "");
 
-      if (!phonePattern.test(phone)) {
-        alert("電話番号は090-1234-5678の形式で入力してください");
+      if (phoneDigits.length !== 10 && phoneDigits.length !== 11) {
+        setText("errorText", "電話番号を正しく入力してください");
+        setStatus("入力エラー", "ng");
         return;
       }
 
       if (!lineProfile.userId) {
-        alert("LINE情報が取得できていません。LINEから開き直してください。");
+        setText("errorText", "LINE情報が取得できていません");
+        setStatus("LINE情報エラー", "ng");
         return;
       }
 
@@ -214,12 +310,21 @@
         });
 
         document.getElementById("formArea").style.display = "none";
-        document.getElementById("completeMessage").style.display = "block";
+        document.getElementById("completeArea").style.display = "block";
 
       } catch (error) {
+        setText("errorText", error.message);
+        setStatus("送信エラー", "ng");
         isSubmitting = false;
         setButton("応募する", false);
-        alert("送信できませんでした。再度お試しください。");
+      }
+    }
+
+    function closeLiffWindow() {
+      if (typeof liff !== "undefined" && liff.isInClient()) {
+        liff.closeWindow();
+      } else {
+        window.close();
       }
     }
 
